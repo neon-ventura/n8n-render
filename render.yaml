@@ -9,23 +9,27 @@ databases:
     ipAllowList: []             # vpc interna; sem acesso externo
 
 services:
-  ######################################################
+   ######################################################
   # Redis (private service)
   ######################################################
-  - type: private_service
-    name: redis                 # hostname interno: redis:<port>
-    plan: starter               # 🔧
+  - type: web                 # ← mantém web
+    serviceType: private      # ← diz à Render que é interno
+    name: redis
+    plan: starter             # 🔧
     region: ohio
-    Env: docker
+    env: docker
     image: redis:7-alpine
     dockerCommand: >
       redis-server
-      --requirepass redispass    # 🔧 troque a senha se quiser
+      --requirepass redispass
       --appendonly yes
     disk:
       name: redis-data
       mountPath: /data
       sizeGB: 1
+    # Porta interna que o processo escuta
+    internalPort: 6379
+
 
   ######################################################
   # n8n Web (UI + API)
