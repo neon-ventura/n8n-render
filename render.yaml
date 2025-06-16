@@ -1,9 +1,9 @@
-# render.yaml — n8n + Postgres + Redis (privado) + Worker
-# ------------------------------------------------------
+# render.yaml — n8n + Postgres + Redis privado + Worker
+# ----------------------------------------------------
 
 databases:
   - name: n8n-postgres
-    region: ohio          # 🔧 ajuste se quiser
+    region: ohio
     plan: free
     databaseName: n8n
     user: n8n
@@ -11,7 +11,7 @@ databases:
 
 services:
   # ---------- Redis (private) ----------
-  - type: pserv              # Private Service
+  - type: pserv
     name: redis
     runtime: docker
     plan: starter
@@ -20,7 +20,6 @@ services:
       url: redis:7-alpine
     dockerCommand: >
       redis-server --requirepass redispass --appendonly yes
-    port: 6379               # porta que o contêiner expõe
     disk:
       name: redis-data
       mountPath: /data
@@ -35,21 +34,20 @@ services:
     image:
       url: n8nio/n8n:latest
     autoDeploy: false
-    port: 5678
     envVars:
-      # --- BASE URL (ajuste para seu domínio) ---
+      # BASE URL  (troque depois para seu domínio)
       - key: N8N_PROTOCOL
         value: https
       - key: N8N_HOST
-        value: <SEU_DOMINIO>            # ex.: n8n-web.onrender.com
+        value: <SEU_DOMINIO>          # ex.: n8n-web.onrender.com
       - key: WEBHOOK_URL
         value: https://<SEU_DOMINIO>
 
-      # --- Chave de criptografia ---
+      # Chave de criptografia
       - key: N8N_ENCRYPTION_KEY
         value: SuperSegredo123
 
-      # --- Postgres (referências automáticas) ---
+      # PostgreSQL
       - key: DB_TYPE
         value: postgresdb
       - fromDatabase:
@@ -73,7 +71,7 @@ services:
           property: password
         key: DB_POSTGRESDB_PASSWORD
 
-      # --- Redis / Bull ---
+      # Redis / Bull queue
       - key: EXECUTIONS_MODE
         value: queue
       - key: QUEUE_BULL_REDIS_HOST
@@ -83,7 +81,7 @@ services:
       - key: QUEUE_BULL_REDIS_PASSWORD
         value: redispass
 
-      # --- Workers habilitados ---
+      # Workers
       - key: N8N_RUNNERS_ENABLED
         value: "true"
       - key: OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS
@@ -107,12 +105,12 @@ services:
     region: ohio
     image:
       url: n8nio/n8n:latest
-    dockerCommand: n8n worker
+    dockerCommand: n8n worker          # executa o worker
     envVars:
       - key: N8N_ENCRYPTION_KEY
         value: SuperSegredo123
 
-      # --- Postgres ---
+      # PostgreSQL
       - key: DB_TYPE
         value: postgresdb
       - fromDatabase:
@@ -136,7 +134,7 @@ services:
           property: password
         key: DB_POSTGRESDB_PASSWORD
 
-      # --- Redis ---
+      # Redis
       - key: QUEUE_BULL_REDIS_HOST
         value: redis
       - key: QUEUE_BULL_REDIS_PORT
