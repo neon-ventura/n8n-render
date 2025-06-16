@@ -1,9 +1,7 @@
-#
-# render.yaml — n8n + PostgreSQL (DBaaS) + Redis (private service) + worker
-#
-
+# render.yaml ─ n8n + Postgres + Redis
+######################################
 databases:
-  - name: n8n-postgres
+  - name: n8n-postgres           # 🔧
     region: ohio
     plan: free
     databaseName: n8n
@@ -11,49 +9,54 @@ databases:
     ipAllowList: []
 
 services:
-  # ───────────────── Redis (private) ─────────────────
+  #################################################################
+  # Redis  (Web-service “private” = acessível só dentro da VPC)
+  #################################################################
   - type: web
-    serviceType: private          # interno, sem URL pública
-    name: redis
+    name: redis                  # hostname interno: redis:6379
     plan: starter
     region: ohio
     env: docker
-    image: redis:7-alpine
-    internalPort: 6379
-    dockerCommand: >
+    image:
+      url: redis:7-alpine
+    startCommand: >
       redis-server
       --requirepass redispass
       --appendonly yes
+    port: 6379
     disk:
       name: redis-data
       mountPath: /data
       sizeGB: 1
+    ingress:
+      - from: private            # ← faz dele um serviço interno
 
-  # ───────────────── n8n Web (UI/API) ─────────────────
+  #################################################################
+  # n8n  (UI + API)
+  #################################################################
   - type: web
-    name: n8n-web
+    name: n8n-web                # 🔧
     plan: starter
     region: ohio
     env: docker
-    image: n8nio/n8n:latest
+    image:
+      url: n8nio/n8n:latest
     autoDeploy: false
-    ports:
-      - port: 5678
-        protocol: http
+    port: 5678
     envVars:
-      # --- Base URL (ajuste depois para seu domínio) ---
+      # --- BASE URL (mude depois para seu domínio) -------------
       - key: N8N_PROTOCOL
         value: https
       - key: N8N_HOST
-        value: n8n-web.onrender.com
+        value: n8n-web.onrender.com      # Render gerará depois
       - key: WEBHOOK_URL
         value: https://n8n-web.onrender.com
 
-      # --- Criptografia ---
+      # --- Chave de criptografia --------------------------------
       - key: N8N_ENCRYPTION_KEY
-        value: SuperSegredo123
+        value: SuperSegredo123           # 🔧
 
-      # --- Postgres (referências automáticas) ---
+      # --- PostgreSQL -------------------------------------------
       - key: DB_TYPE
         value: postgresdb
       - fromDatabase:
@@ -77,21 +80,21 @@ services:
           property: password
         key: DB_POSTGRESDB_PASSWORD
 
-      # --- Redis / Bull ---
+      # --- Redis / Bull -----------------------------------------
       - key: EXECUTIONS_MODE
         value: queue
       - key: QUEUE_BULL_REDIS_HOST
         value: redis
       - key: QUEUE_BULL_REDIS_PORT
-        value: '6379'
+        value: "6379"
       - key: QUEUE_BULL_REDIS_PASSWORD
         value: redispass
 
-      # --- Workers habilitados ---
+      # --- Permite usar workers ---------------------------------
       - key: N8N_RUNNERS_ENABLED
-        value: 'true'
+        value: "true"
       - key: OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS
-        value: 'true'
+        value: "true"
 
       - key: NODE_ENV
         value: production
@@ -103,18 +106,22 @@ services:
       mountPath: /home/node/.n8n
       sizeGB: 1
 
-  # ───────────────── n8n Worker (fila Bull) ─────────────────
+  #################################################################
+  # n8n WORKER (Background / Bull queue)
+  #################################################################
   - type: worker
     name: n8n-worker
     plan: starter
     region: ohio
     env: docker
-    image: n8nio/n8n:latest
-    command: worker
+    image:
+      url: n8nio/n8n:latest
+    startCommand: n8n worker        # <─ difere do web
     envVars:
       - key: N8N_ENCRYPTION_KEY
         value: SuperSegredo123
 
+      # --- PostgreSQL (reuso) -----------------------------------
       - fromDatabase:
           name: n8n-postgres
           property: host
@@ -138,10 +145,11 @@ services:
       - key: DB_TYPE
         value: postgresdb
 
+      # --- Redis -------------------------------------------------
       - key: QUEUE_BULL_REDIS_HOST
         value: redis
       - key: QUEUE_BULL_REDIS_PORT
-        value: '6379'
+        value: "6379"
       - key: QUEUE_BULL_REDIS_PASSWORD
         value: redispass
 
