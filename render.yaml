@@ -1,65 +1,156 @@
-# Use this Blueprint to deploy n8n on Render as a web
-# service that uses a Postgres database to store
-# workflow data.
-#
-# This Blueprint uses free instance types (specified by
-# `plan`) for both the web service and the database. You
-# can upgrade to paid instance types at any time to
-# increase resources.
+# render.yaml  ───  blueprint para n8n + Postgres + Redis
+########################################
+databases:
+  - name: n8n-postgres          # 🔧 nome exibido no painel
+    region: ohio                # us-east4; use "ireland", "oregon", etc.
+    plan: free                  # free / standard / pro
+    databaseName: n8n
+    user: n8n
+    ipAllowList: []             # vpc interna; sem acesso externo
 
 services:
+  ######################################################
+  # Redis (private service)
+  ######################################################
+  - type: private_service
+    name: redis                 # hostname interno: redis:<port>
+    plan: starter               # 🔧
+    region: ohio
+    Env: docker
+    image: redis:7-alpine
+    dockerCommand: >
+      redis-server
+      --requirepass redispass    # 🔧 troque a senha se quiser
+      --appendonly yes
+    disk:
+      name: redis-data
+      mountPath: /data
+      sizeGB: 1
+
+  ######################################################
+  # n8n Web (UI + API)
+  ######################################################
   - type: web
-    plan: free
-    # This is the runtime for services that pull a prebuilt Docker image
-    runtime: image
-    # You can give the service any name
-    name: n8n-service
-    image:
-      # Pulls the n8n image tagged as latest from Docker Hub
-      url: docker.io/n8nio/n8n:latest
-
-    # All environment variables defined below are required!
-    #
-    # You can define additional environment variables as needed.
+    name: n8n-web               # 🔧
+    plan: starter
+    region: ohio
+    Env: docker
+    image: n8nio/n8n:latest
+    autoDeploy: false           # redeploy só quando mudar versão
+    ports:
+      - port: 5678
+        protocol: http
     envVars:
-      # Generates a base64-encoded key for
-      # encrypting credentials in n8n
-      #
-      # Do not modify this value after it's generated!
-      # If you do, you'll lose access to all credentials
-      # encrypted with the previous value.
-      - key: N8N_ENCRYPTION_KEY
-        generateValue: true
+      ######## Base URL (ajuste se usar domínio próprio) ########
+      - key: N8N_PROTOCOL
+        value: https
+      - key: N8N_HOST
+        value: n8n-web.onrender.com   # Render gera depois; troque p/ seu domínio
+      - key: WEBHOOK_URL
+        value: n8n-service-3zlh.onrender.com
 
-      # These automatically populate connection details 
-      # for the Render Postgres database defined below
+      ######## Criptografia ########
+      - key: N8N_ENCRYPTION_KEY
+        value: SuperSegredo123        # 🔧 gere algo forte
+
+      ######## Postgres (pega da seção databases) ########
       - key: DB_TYPE
         value: postgresdb
-      - key: DB_POSTGRESDB_DATABASE
-        fromDatabase:
-          name: n8n-db
-          property: database
-      - key: DB_POSTGRESDB_HOST
-        fromDatabase:
-          name: n8n-db
+      - fromDatabase:
+          name: n8n-postgres
           property: host
-      - key: DB_POSTGRESDB_PASSWORD
-        fromDatabase:
-          name: n8n-db
-          property: password
-      - key: DB_POSTGRESDB_USER
-        fromDatabase:
-          name: n8n-db
+        key: DB_POSTGRESDB_HOST
+      - fromDatabase:
+          name: n8n-postgres
+          property: port
+        key: DB_POSTGRESDB_PORT
+      - fromDatabase:
+          name: n8n-postgres
+          property: database
+        key: DB_POSTGRESDB_DATABASE
+      - fromDatabase:
+          name: n8n-postgres
           property: user
+        key: DB_POSTGRESDB_USER
+      - fromDatabase:
+          name: n8n-postgres
+          property: password
+        key: DB_POSTGRESDB_PASSWORD
 
-databases:
-  - name: n8n-db
-    plan: free
-    # The free instance type is limited to 1 GB of disk
-    # space.
-    #
-    # If you later upgrade to a paid instance type, you can
-    # increase the disk size to any multiple of 5 GB by
-    # setting the `diskSizeGB` property.
-    #
-    # diskSizeGB: 5
+      ######## Redis / Bull ########
+      - key: EXECUTIONS_MODE
+        value: queue
+      - key: QUEUE_BULL_REDIS_HOST
+        value: redis
+      - key: QUEUE_BULL_REDIS_PORT
+        value: "6379"
+      - key: QUEUE_BULL_REDIS_PASSWORD
+        value: redispass            # mesma senha passada no redis
+
+      ######## Permitir workers ########
+      - key: N8N_RUNNERS_ENABLED
+        value: "true"
+      - key: OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS
+        value: "true"
+
+      ######## Outras boas práticas ########
+      - key: NODE_ENV
+        value: production
+      - key: GENERIC_TIMEZONE
+        value: America/Sao_Paulo
+
+    disk:
+      name: n8n-data
+      mountPath: /home/node/.n8n
+      sizeGB: 1
+
+  ######################################################
+  # n8n Worker (Background)
+  ######################################################
+  - type: worker
+    name: n8n-worker
+    plan: starter
+    region: ohio
+    Env: docker
+    image: n8nio/n8n:latest
+    command: worker                 # <─ n8n worker mode
+    envVars:
+      - key: N8N_ENCRYPTION_KEY
+        value: SuperSegredo123
+
+      # Postgres (reuse)
+      - fromDatabase:
+          name: n8n-postgres
+          property: host
+        key: DB_POSTGRESDB_HOST
+      - fromDatabase:
+          name: n8n-postgres
+          property: port
+        key: DB_POSTGRESDB_PORT
+      - fromDatabase:
+          name: n8n-postgres
+          property: database
+        key: DB_POSTGRESDB_DATABASE
+      - fromDatabase:
+          name: n8n-postgres
+          property: user
+        key: DB_POSTGRESDB_USER
+      - fromDatabase:
+          name: n8n-postgres
+          property: password
+        key: DB_POSTGRESDB_PASSWORD
+      - key: DB_TYPE
+        value: postgresdb
+
+      # Redis
+      - key: QUEUE_BULL_REDIS_HOST
+        value: redis
+      - key: QUEUE_BULL_REDIS_PORT
+        value: "6379"
+      - key: QUEUE_BULL_REDIS_PASSWORD
+        value: redispass
+
+      - key: EXECUTIONS_PROCESS
+        value: main
+      - key: NODE_ENV
+        value: production
