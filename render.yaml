@@ -1,28 +1,26 @@
-# render.yaml  —  n8n + Postgres + Redis (privado) + Worker
-# --------------------------------------------------------
+# render.yaml — n8n + Postgres + Redis (privado) + Worker
+# ------------------------------------------------------
 
 databases:
   - name: n8n-postgres
-    region: ohio
+    region: ohio          # 🔧 ajuste se quiser
     plan: free
     databaseName: n8n
     user: n8n
     ipAllowList: []
 
 services:
-  # ---------- Redis (private service) ----------
-  - type: pserv                 # private service
+  # ---------- Redis (private) ----------
+  - type: pserv              # Private Service
     name: redis
     runtime: docker
     plan: starter
     region: ohio
     image:
       url: redis:7-alpine
-    startCommand: >
+    dockerCommand: >
       redis-server --requirepass redispass --appendonly yes
-    envVars:
-      - key: PORT               # porta que o Redis escuta
-        value: "6379"
+    port: 6379               # porta que o contêiner expõe
     disk:
       name: redis-data
       mountPath: /data
@@ -37,21 +35,21 @@ services:
     image:
       url: n8nio/n8n:latest
     autoDeploy: false
-    startCommand: n8n           # padrão, mas explícito
+    port: 5678
     envVars:
-      # --- BASE URL (mude depois) ---
+      # --- BASE URL (ajuste para seu domínio) ---
       - key: N8N_PROTOCOL
         value: https
       - key: N8N_HOST
-        value: <SEU_DOMÍNIO>          # ex.: n8n.onrender.com
+        value: <SEU_DOMINIO>            # ex.: n8n-web.onrender.com
       - key: WEBHOOK_URL
-        value: https://<SEU_DOMÍNIO>
+        value: https://<SEU_DOMINIO>
 
       # --- Chave de criptografia ---
       - key: N8N_ENCRYPTION_KEY
         value: SuperSegredo123
 
-      # --- PostgreSQL (referência) ---
+      # --- Postgres (referências automáticas) ---
       - key: DB_TYPE
         value: postgresdb
       - fromDatabase:
@@ -109,12 +107,12 @@ services:
     region: ohio
     image:
       url: n8nio/n8n:latest
-    startCommand: n8n worker
+    dockerCommand: n8n worker
     envVars:
       - key: N8N_ENCRYPTION_KEY
         value: SuperSegredo123
 
-      # PostgreSQL
+      # --- Postgres ---
       - key: DB_TYPE
         value: postgresdb
       - fromDatabase:
@@ -138,7 +136,7 @@ services:
           property: password
         key: DB_POSTGRESDB_PASSWORD
 
-      # Redis
+      # --- Redis ---
       - key: QUEUE_BULL_REDIS_HOST
         value: redis
       - key: QUEUE_BULL_REDIS_PORT
