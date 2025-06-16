@@ -1,24 +1,25 @@
-# render.yaml  ───  blueprint para n8n + Postgres + Redis
-########################################
+#
+# render.yaml — n8n + PostgreSQL (DBaaS) + Redis (private service) + worker
+#
+
 databases:
-  - name: n8n-postgres          # 🔧 nome exibido no painel
-    region: ohio                # us-east4; use "ireland", "oregon", etc.
-    plan: free                  # free / standard / pro
+  - name: n8n-postgres
+    region: ohio
+    plan: free
     databaseName: n8n
     user: n8n
-    ipAllowList: []             # vpc interna; sem acesso externo
+    ipAllowList: []
 
 services:
-   ######################################################
-  # Redis (private service)
-  ######################################################
-  - type: web                 # ← mantém web
-    serviceType: private      # ← diz à Render que é interno
+  # ───────────────── Redis (private) ─────────────────
+  - type: web
+    serviceType: private          # interno, sem URL pública
     name: redis
-    plan: starter             # 🔧
+    plan: starter
     region: ohio
     env: docker
     image: redis:7-alpine
+    internalPort: 6379
     dockerCommand: >
       redis-server
       --requirepass redispass
@@ -27,37 +28,32 @@ services:
       name: redis-data
       mountPath: /data
       sizeGB: 1
-    # Porta interna que o processo escuta
-    internalPort: 6379
 
-
-  ######################################################
-  # n8n Web (UI + API)
-  ######################################################
+  # ───────────────── n8n Web (UI/API) ─────────────────
   - type: web
-    name: n8n-web               # 🔧
+    name: n8n-web
     plan: starter
     region: ohio
-    Env: docker
+    env: docker
     image: n8nio/n8n:latest
-    autoDeploy: false           # redeploy só quando mudar versão
+    autoDeploy: false
     ports:
       - port: 5678
         protocol: http
     envVars:
-      ######## Base URL (ajuste se usar domínio próprio) ########
+      # --- Base URL (ajuste depois para seu domínio) ---
       - key: N8N_PROTOCOL
         value: https
       - key: N8N_HOST
-        value: n8n-web.onrender.com   # Render gera depois; troque p/ seu domínio
+        value: n8n-web.onrender.com
       - key: WEBHOOK_URL
-        value: n8n-service-3zlh.onrender.com
+        value: https://n8n-web.onrender.com
 
-      ######## Criptografia ########
+      # --- Criptografia ---
       - key: N8N_ENCRYPTION_KEY
-        value: SuperSegredo123        # 🔧 gere algo forte
+        value: SuperSegredo123
 
-      ######## Postgres (pega da seção databases) ########
+      # --- Postgres (referências automáticas) ---
       - key: DB_TYPE
         value: postgresdb
       - fromDatabase:
@@ -81,23 +77,22 @@ services:
           property: password
         key: DB_POSTGRESDB_PASSWORD
 
-      ######## Redis / Bull ########
+      # --- Redis / Bull ---
       - key: EXECUTIONS_MODE
         value: queue
       - key: QUEUE_BULL_REDIS_HOST
         value: redis
       - key: QUEUE_BULL_REDIS_PORT
-        value: "6379"
+        value: '6379'
       - key: QUEUE_BULL_REDIS_PASSWORD
-        value: redispass            # mesma senha passada no redis
+        value: redispass
 
-      ######## Permitir workers ########
+      # --- Workers habilitados ---
       - key: N8N_RUNNERS_ENABLED
-        value: "true"
+        value: 'true'
       - key: OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS
-        value: "true"
+        value: 'true'
 
-      ######## Outras boas práticas ########
       - key: NODE_ENV
         value: production
       - key: GENERIC_TIMEZONE
@@ -108,21 +103,18 @@ services:
       mountPath: /home/node/.n8n
       sizeGB: 1
 
-  ######################################################
-  # n8n Worker (Background)
-  ######################################################
+  # ───────────────── n8n Worker (fila Bull) ─────────────────
   - type: worker
     name: n8n-worker
     plan: starter
     region: ohio
-    Env: docker
+    env: docker
     image: n8nio/n8n:latest
-    command: worker                 # <─ n8n worker mode
+    command: worker
     envVars:
       - key: N8N_ENCRYPTION_KEY
         value: SuperSegredo123
 
-      # Postgres (reuse)
       - fromDatabase:
           name: n8n-postgres
           property: host
@@ -146,11 +138,10 @@ services:
       - key: DB_TYPE
         value: postgresdb
 
-      # Redis
       - key: QUEUE_BULL_REDIS_HOST
         value: redis
       - key: QUEUE_BULL_REDIS_PORT
-        value: "6379"
+        value: '6379'
       - key: QUEUE_BULL_REDIS_PASSWORD
         value: redispass
 
